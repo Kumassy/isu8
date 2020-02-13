@@ -128,33 +128,82 @@ def get_event(event_id, login_user_id=None):
     for rank in ["S", "A", "B", "C"]:
         event["sheets"][rank] = {'total': 0, 'remains': 0, 'detail': []}
 
-    cur.execute("SELECT * FROM sheets ORDER BY `rank`, num")
-    sheets = cur.fetchall()
-    for sheet in sheets:
-        if not event['sheets'][sheet['rank']].get('price'):
-            event['sheets'][sheet['rank']]['price'] = event['price'] + sheet['price']
-        event['total'] += 1
-        event['sheets'][sheet['rank']]['total'] += 1
+    # cur.execute("SELECT * FROM sheets ORDER BY `rank`, num")
+    # sheets = cur.fetchall()
+    # for sheet in sheets:
+    #     if not event['sheets'][sheet['rank']].get('price'):
+    #         event['sheets'][sheet['rank']]['price'] = event['price'] + sheet['price']
+    #     event['total'] += 1
+    #     event['sheets'][sheet['rank']]['total'] += 1
 
-        cur.execute(
-            # "SELECT * FROM reservations WHERE event_id = %s AND sheet_id = %s AND canceled_at IS NULL GROUP BY event_id, sheet_id HAVING reserved_at = MIN(reserved_at)",
-            "SELECT user_id, reserved_at FROM reservations WHERE event_id = %s AND sheet_id = %s AND canceled_at IS NULL GROUP BY event_id, sheet_id ORDER BY reserved_at ASC LIMIT 1",
-            [event['id'], sheet['id']])
-        reservation = cur.fetchone()
-        if reservation:
+    #     cur.execute(
+    #         # "SELECT * FROM reservations WHERE event_id = %s AND sheet_id = %s AND canceled_at IS NULL GROUP BY event_id, sheet_id HAVING reserved_at = MIN(reserved_at)",
+    #         "SELECT user_id, reserved_at FROM reservations WHERE event_id = %s AND sheet_id = %s AND canceled_at IS NULL GROUP BY event_id, sheet_id ORDER BY reserved_at ASC LIMIT 1",
+    #         [event['id'], sheet['id']])
+    #     reservation = cur.fetchone()
+    #     if reservation:
+    #         if login_user_id and reservation['user_id'] == login_user_id:
+    #             sheet['mine'] = True
+    #         sheet['reserved'] = True
+    #         sheet['reserved_at'] = int(reservation['reserved_at'].replace(tzinfo=timezone.utc).timestamp())
+    #     else:
+    #         event['remains'] += 1
+    #         event['sheets'][sheet['rank']]['remains'] += 1
+
+    #     event['sheets'][sheet['rank']]['detail'].append(sheet)
+
+    #     del sheet['id']
+    #     del sheet['price']
+    #     del sheet['rank']
+
+
+    cur.execute("SELECT count(*) as count FROM sheets")
+    stats = cur.fetchone()
+    event['total'] = stats['count']
+
+    cur.execute("SELECT count(*) as count, `rank`, price FROM sheets group by `rank`")
+    stats = cur.fetchall()
+
+    for stat in stats:
+        rank = stat["rank"]
+        event["sheets"][rank]['total'] = stat["count"]
+        event["sheets"][rank]['price'] = event["price"] + stat["price"]
+
+    cur.execute(
+        "select s.rank, s.num, r.id, r.user_id, r.reserved_at from sheets s left join reservations r ON (r.sheet_id = s.id and r.event_id = %s and r.canceled_at is null)",
+        [event['id']])
+    reservations = cur.fetchall()
+    for reservation in reservations:
+        sheet = {}
+        sheet['num'] = reservation['num']
+        if reservation['id']:
             if login_user_id and reservation['user_id'] == login_user_id:
                 sheet['mine'] = True
             sheet['reserved'] = True
             sheet['reserved_at'] = int(reservation['reserved_at'].replace(tzinfo=timezone.utc).timestamp())
         else:
             event['remains'] += 1
-            event['sheets'][sheet['rank']]['remains'] += 1
+            event['sheets'][reservation['rank']]['remains'] += 1
+        event['sheets'][reservation['rank']]['detail'].append(sheet)
 
-        event['sheets'][sheet['rank']]['detail'].append(sheet)
+    # mine, reserved, num
 
-        del sheet['id']
-        del sheet['price']
-        del sheet['rank']
+
+    # select * from sheets s left join reservations r ON r.sheet_id = s.id where r.event_id = 15 AND r.canceled_at is null;
+    # +------+------+-----+-------+--------+----------+----------+---------+----------------------------+-------------+
+    # | id   | rank | num | price | id     | event_id | sheet_id | user_id | reserved_at                | canceled_at |
+    # +------+------+-----+-------+--------+----------+----------+---------+----------------------------+-------------+
+    # |    1 | S    |   1 |  5000 | 185406 |       15 |        1 |    1260 | 2016-03-25 00:18:25.000000 | NULL        |
+    # |    2 | S    |   2 |  5000 | 188043 |       15 |        2 |     443 | 2017-02-14 13:47:46.000000 | NULL        |
+    # |    3 | S    |   3 |  5000 | 148182 |       15 |        3 |    2381 | 2012-01-08 10:20:17.000000 | NULL        |
+    # |    4 | S    |   4 |  5000 | 191320 |       15 |        4 |    4728 | 2018-06-08 06:55:18.000000 | NULL        |
+    # |    5 | S    |   5 |  5000 | 185099 |       15 |        5 |    3768 | 2016-02-16 06:39:22.000000 | NULL        |
+    # |    6 | S    |   6 |  5000 | 190264 |       15 |        6 |    3897 | 2017-12-21 02:32:24.000000 | NULL        |
+    # |    7 | S    |   7 |  5000 | 149524 |       15 |        7 |    3820 | 2012-01-21 13:04:38.000000 | NULL        |
+    # |    8 | S    |   8 |  5000 | 186971 |       15 |        8 |    4931 | 2016-10-01 22:37:31.000000 | NULL        |
+    # |    9 | S    |   9 |  5000 | 137021 |       15 |        9 |    3848 | 2011-10-27 14:53:34.000000 | NULL        |
+    # |   10 | S    |  10 |  5000 | 189302 |       15 |       10 |     497 | 2017-07-29 15:01:03.000000 | NULL        |
+
 
     event['public'] = True if event['public_fg'] else False
     event['closed'] = True if event['closed_fg'] else False
